@@ -180,7 +180,7 @@ public class NfcPlugin extends CordovaPlugin {
                     nfcAdapter.enableForegroundDispatch(getActivity(), getPendingIntent(), getIntentFilters(), getTechLists());
 
                     if (p2pMessage != null) {
-                        nfcAdapter.enableForegroundNdefPush(getActivity(), p2pMessage);
+                        nfcAdapter.setNdefPushMessage(p2pMessage, getActivity());
                     }
 
                 }
@@ -196,7 +196,7 @@ public class NfcPlugin extends CordovaPlugin {
 
                 if (nfcAdapter != null) {
                     nfcAdapter.disableForegroundDispatch(getActivity());
-                    nfcAdapter.disableForegroundNdefPush(getActivity());
+                    nfcAdapter.setNdefPushMessage(null, getActivity());
                 }
             }
         });
@@ -209,7 +209,7 @@ public class NfcPlugin extends CordovaPlugin {
                 NfcAdapter nfcAdapter = NfcAdapter.getDefaultAdapter(getActivity());
 
                 if (nfcAdapter != null) {
-                    nfcAdapter.enableForegroundNdefPush(getActivity(), p2pMessage);
+                    nfcAdapter.setNdefPushMessage(p2pMessage, getActivity());
                 }
             }
         });
@@ -222,7 +222,7 @@ public class NfcPlugin extends CordovaPlugin {
                 NfcAdapter nfcAdapter = NfcAdapter.getDefaultAdapter(getActivity());
 
                 if (nfcAdapter != null) {
-                    nfcAdapter.disableForegroundNdefPush(getActivity());
+                    nfcAdapter.setNdefPushMessage(null, getActivity());
                 }
 
             }
