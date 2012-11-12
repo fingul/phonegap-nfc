@@ -171,8 +171,7 @@ public class NfcPlugin extends CordovaPlugin {
 
         if (action.equalsIgnoreCase(REGISTER_MIME_TYPE)) {
             try {
-                String mimeType = data.getString(0);
-                intentFilters.add(createIntentFilter(mimeType));
+                addMimeTypeFilter(data.getString(0));
             } catch (MalformedMimeTypeException e) {
                 callback.error("Invalid MIME Type");
                 return true;
@@ -255,15 +254,13 @@ public class NfcPlugin extends CordovaPlugin {
         } else if (action.equalsIgnoreCase(SHARE_TAG)) {
 
             NdefRecord[] records = Util.jsonToNdefRecords(data.getString(0));
-            this.p2pMessage = new NdefMessage(records);
 
-            startNdefPush();
+            startNdefPush(new NdefMessage(records));
 
             callback.success();
             return true;
 
         } else if (action.equalsIgnoreCase(UNSHARE_TAG)) {
-            p2pMessage = null;
             stopNdefPush();
             callback.success();
             return true;
@@ -302,35 +299,57 @@ public class NfcPlugin extends CordovaPlugin {
     }
 
     private void addTechList(String[] list) {
-        this.addTechFilter();
-        this.addToTechList(list);
-    }
-
-    private void addTechFilter() {
-        intentFilters.add(new IntentFilter(NfcAdapter.ACTION_TECH_DISCOVERED));
+        synchronized (this) {
+            intentFilters.add(new IntentFilter(NfcAdapter.ACTION_TECH_DISCOVERED));
+            techLists.add(list);
+        }
     }
 
     private void addTagFilter() {
-        intentFilters.add(new IntentFilter(NfcAdapter.ACTION_TAG_DISCOVERED));
+        synchronized (this) {
+            intentFilters.add(new IntentFilter(NfcAdapter.ACTION_TAG_DISCOVERED));
+        }
     }
-    
+
+    private void addMimeTypeFilter(String mimeType) throws MalformedMimeTypeException {
+        IntentFilter intentFilter = new IntentFilter(NfcAdapter.ACTION_NDEF_DISCOVERED);
+        intentFilter.addDataType(mimeType);
+        synchronized (this) {
+            intentFilters.add(intentFilter);
+        }
+    }
+
     private void updateNfcDispatch() {
         if (nfcAdapter == null)  // shortcut to avoid scheduling
             return;
         getActivity().runOnUiThread(new Runnable() {
             public void run() {
-                if (nfcAdapter != null) {
-                    nfcAdapter.enableForegroundDispatch(getActivity(), getPendingIntent(), getIntentFilters(), getTechLists());
-                }
+                updateNfcDispatchOnUiThread();
             }
         });
     }
 
-    private void startNdefPush() {
+    private void updateNfcDispatchOnUiThread() {
+        if (nfcAdapter != null) {
+            IntentFilter[] filtersArray;
+            String[][] techListsArray;
+            synchronized (this) {
+                filtersArray = intentFilters
+                        .toArray(new IntentFilter[intentFilters.size()]);
+                techListsArray = techLists
+                        .toArray(new String[techLists.size()][]);
+            }
+            nfcAdapter.enableForegroundDispatch(getActivity(),
+                    pendingIntent, filtersArray, techListsArray);
+        }
+    }
+
+    private void startNdefPush(final NdefMessage message) {
         if (nfcAdapter == null)  // shortcut to avoid scheduling
             return;
         getActivity().runOnUiThread(new Runnable() {
             public void run() {
+                p2pMessage = message;
                 if (nfcAdapter != null) {
                     nfcAdapter.enableForegroundNdefPush(getActivity(), p2pMessage);
                 }
@@ -343,34 +362,12 @@ public class NfcPlugin extends CordovaPlugin {
             return;
         getActivity().runOnUiThread(new Runnable() {
             public void run() {
+                p2pMessage = null;
                 if (nfcAdapter != null) {
                     nfcAdapter.disableForegroundNdefPush(getActivity());
                 }
             }
         });
-    }
-
-    private void addToTechList(String[] techs) {
-        techLists.add(techs);
-    }
-
-    private IntentFilter createIntentFilter(String mimeType) throws MalformedMimeTypeException {
-        IntentFilter intentFilter = new IntentFilter(NfcAdapter.ACTION_NDEF_DISCOVERED);
-        intentFilter.addDataType(mimeType);
-        return intentFilter;
-    }
-
-    private PendingIntent getPendingIntent() {
-        return pendingIntent;
-    }
-
-    private IntentFilter[] getIntentFilters() {
-        return intentFilters.toArray(new IntentFilter[intentFilters.size()]);
-    }
-
-    private String[][] getTechLists() {
-        //noinspection ToArrayCallWithZeroLengthArrayArgument
-        return techLists.toArray(new String[0][0]);
     }
 
     void parseMessage() {
@@ -532,7 +529,7 @@ public class NfcPlugin extends CordovaPlugin {
 
         if (nfcAdapter != null) {
             createPendingIntent();
-            nfcAdapter.enableForegroundDispatch(getActivity(), getPendingIntent(), getIntentFilters(), getTechLists());
+            updateNfcDispatchOnUiThread();
 
             if (p2pMessage != null) {
                 nfcAdapter.enableForegroundNdefPush(getActivity(), p2pMessage);
