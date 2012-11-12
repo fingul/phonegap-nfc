@@ -156,6 +156,7 @@ public class NfcPlugin extends CordovaPlugin {
     private final List<IntentFilter> intentFilters = new ArrayList<IntentFilter>();
     private final ArrayList<String[]> techLists = new ArrayList<String[]>();
 
+    private volatile NfcAdapter nfcAdapter = null;
     private NdefMessage p2pMessage = null;
     private PendingIntent pendingIntent = null;
 
@@ -167,7 +168,6 @@ public class NfcPlugin extends CordovaPlugin {
     public boolean execute(String action, JSONArray data,
                            CallbackContext callback) throws JSONException {
         Log.d(TAG, "execute " + action);
-        createPendingIntent();
 
         if (action.equalsIgnoreCase(REGISTER_MIME_TYPE)) {
             try {
@@ -177,25 +177,25 @@ public class NfcPlugin extends CordovaPlugin {
                 callback.error("Invalid MIME Type");
                 return true;
             }
-            startNfc();
+            updateNfcDispatch();
 
             callback.success();
             return true;
         } else if (action.equalsIgnoreCase(REGISTER_NDEF)) {
             addTechList(new String[]{Ndef.class.getName()});
-            startNfc();
+            updateNfcDispatch();
 
             callback.success();
             return true;
         } else if (action.equalsIgnoreCase(REGISTER_NDEF_FORMATABLE)) {
             addTechList(new String[]{NdefFormatable.class.getName()});
-            startNfc();
+            updateNfcDispatch();
 
             callback.success();
             return true;
         }  else if (action.equals(REGISTER_DEFAULT_TAG)) {
             addTagFilter();
-            startNfc();
+            updateNfcDispatch();
 
             callback.success();
             return true;
@@ -281,7 +281,6 @@ public class NfcPlugin extends CordovaPlugin {
                 return true;
             } // Note: a non-error could be NDEF_PUSH_DISABLED
             
-            startNfc();
             if (!recycledIntent()) {
                 parseMessage();
             }
@@ -315,45 +314,23 @@ public class NfcPlugin extends CordovaPlugin {
         intentFilters.add(new IntentFilter(NfcAdapter.ACTION_TAG_DISCOVERED));
     }
     
-    private void startNfc() {
-        createPendingIntent(); // onResume can call startNfc before execute
-
+    private void updateNfcDispatch() {
+        if (nfcAdapter == null)  // shortcut to avoid scheduling
+            return;
         getActivity().runOnUiThread(new Runnable() {
             public void run() {
-                NfcAdapter nfcAdapter = NfcAdapter.getDefaultAdapter(getActivity());
-
                 if (nfcAdapter != null) {
                     nfcAdapter.enableForegroundDispatch(getActivity(), getPendingIntent(), getIntentFilters(), getTechLists());
-
-                    if (p2pMessage != null) {
-                        nfcAdapter.enableForegroundNdefPush(getActivity(), p2pMessage);
-                    }
-
-                }
-            }
-        });
-    }
-
-    private void stopNfc() {
-        getActivity().runOnUiThread(new Runnable() {
-            public void run() {
-
-                NfcAdapter nfcAdapter = NfcAdapter.getDefaultAdapter(getActivity());
-
-                if (nfcAdapter != null) {
-                    nfcAdapter.disableForegroundDispatch(getActivity());
-                    nfcAdapter.disableForegroundNdefPush(getActivity());
                 }
             }
         });
     }
 
     private void startNdefPush() {
+        if (nfcAdapter == null)  // shortcut to avoid scheduling
+            return;
         getActivity().runOnUiThread(new Runnable() {
             public void run() {
-
-                NfcAdapter nfcAdapter = NfcAdapter.getDefaultAdapter(getActivity());
-
                 if (nfcAdapter != null) {
                     nfcAdapter.enableForegroundNdefPush(getActivity(), p2pMessage);
                 }
@@ -362,15 +339,13 @@ public class NfcPlugin extends CordovaPlugin {
     }
 
     private void stopNdefPush() {
+        if (nfcAdapter == null)  // shortcut to avoid scheduling
+            return;
         getActivity().runOnUiThread(new Runnable() {
             public void run() {
-
-                NfcAdapter nfcAdapter = NfcAdapter.getDefaultAdapter(getActivity());
-
                 if (nfcAdapter != null) {
                     nfcAdapter.disableForegroundNdefPush(getActivity());
                 }
-
             }
         });
     }
@@ -533,15 +508,36 @@ public class NfcPlugin extends CordovaPlugin {
     @Override
     public void onPause(boolean multitasking) {
         Log.d(TAG, "onPause " + getIntent());
+
+        if (nfcAdapter != null) {
+            nfcAdapter.disableForegroundDispatch(getActivity());
+            nfcAdapter.disableForegroundNdefPush(getActivity());
+            nfcAdapter = null;
+        }
+
         super.onPause(multitasking);
-        stopNfc();
     }
 
     @Override
     public void onResume(boolean multitasking) {
         Log.d(TAG, "onResume " + getIntent());
         super.onResume(multitasking);
-        startNfc();
+
+        if (nfcAdapter != null) {
+            Log.wtf(TAG, "NFC adapter was active on resume");
+            return;
+        }
+
+        nfcAdapter = NfcAdapter.getDefaultAdapter(getActivity());
+
+        if (nfcAdapter != null) {
+            createPendingIntent();
+            nfcAdapter.enableForegroundDispatch(getActivity(), getPendingIntent(), getIntentFilters(), getTechLists());
+
+            if (p2pMessage != null) {
+                nfcAdapter.enableForegroundNdefPush(getActivity(), p2pMessage);
+            }
+        }
     }
 
     @Override
